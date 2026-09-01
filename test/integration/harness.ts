@@ -23,7 +23,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import {
-  isMuxAvailable,
+  getMuxBackend,
   createSurface,
   createSurfaceSplit,
   sendCommand,
@@ -76,26 +76,71 @@ export const PI_TIMEOUT = Number(process.env.PI_TEST_TIMEOUT ?? "120000");
 // ── Backend detection ──
 
 /**
- * Detect whether tmux is available in the current environment.
- * Returns ["tmux"] or [].
+ * Detect available multiplexer backends in the current environment.
+ * Returns ["tmux"], ["wezterm"], ["tmux", "wezterm"], or [].
  */
 export function getAvailableBackends(): string[] {
-  return isMuxAvailable() ? ["tmux"] : [];
+  const backends: string[] = [];
+  
+  // Check for tmux
+  try {
+    execFileSync("tmux", ["-V"], { encoding: "utf8", stdio: "ignore" });
+    backends.push("tmux");
+  } catch {}
+  
+  // Check for WezTerm
+  if (process.env.WEZTERM_UNIX_SOCKET) {
+    try {
+      execFileSync("wezterm", ["cli", "--help"], { encoding: "utf8", stdio: "ignore" });
+      backends.push("wezterm");
+    } catch {}
+  }
+  
+  // Filter by PI_SUBAGENT_MUX if set
+  const override = process.env.PI_SUBAGENT_MUX;
+  if (override) {
+    return backends.filter((b) => b === override);
+  }
+  
+  return backends;
 }
 
 export function focusSurface(surface: string): void {
-  execFileSync("tmux", ["select-pane", "-t", surface], { encoding: "utf8" });
+  const backend = getMuxBackend();
+  if (backend === "wezterm") {
+    execFileSync("wezterm", ["cli", "activate-pane", "--pane-id", surface], { encoding: "utf8" });
+  } else {
+    execFileSync("tmux", ["select-pane", "-t", surface], { encoding: "utf8" });
+  }
 }
 
 export function getFocusedSurface(): string | null {
-  try {
-    const panes = execFileSync("tmux", ["list-panes", "-F", "#{pane_id} #{pane_active}"], {
-      encoding: "utf8",
-    });
-    const activeLine = panes.split("\n").find((line) => line.endsWith(" 1"));
-    return activeLine?.split(" ")[0] ?? null;
-  } catch {
-    return null;
+  const backend = getMuxBackend();
+  
+  if (backend === "wezterm") {
+    try {
+      const output = execFileSync("wezterm", ["cli", "list", "--format", "json"], {
+        encoding: "utf8",
+      });
+      const panes = JSON.parse(output);
+      // Find the active pane (is_active: true)
+      const activePane = Array.isArray(panes) 
+        ? panes.find((p: any) => p.is_active)
+        : null;
+      return activePane?.pane_id?.toString() ?? null;
+    } catch {
+      return null;
+    }
+  } else {
+    try {
+      const panes = execFileSync("tmux", ["list-panes", "-F", "#{pane_id} #{pane_active}"], {
+        encoding: "utf8",
+      });
+      const activeLine = panes.split("\n").find((line) => line.endsWith(" 1"));
+      return activeLine?.split(" ")[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -110,7 +155,7 @@ export async function waitForFocusedSurface(
   }
 
   throw new Error(
-    `Timeout (${timeout}ms) waiting for focused tmux pane ${surface}; ` +
+    `Timeout (${timeout}ms) waiting for focused pane ${surface}; ` +
       `current focus is ${getFocusedSurface() ?? "unknown"}`,
   );
 }

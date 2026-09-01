@@ -1,14 +1,17 @@
 /**
- * tmux surface layer — the only terminal multiplexer this extension supports.
+ * Terminal multiplexer surface layer — supports tmux and WezTerm.
  *
  * Everything the extension does to a pane goes through the small API in this
  * file: create/split a pane, type a command into it, read its screen, close
- * it, and poll for exit. Keeping the tmux calls isolated here means index.ts
- * stays testable without a multiplexer running.
+ * it, and poll for exit. Keeping the multiplexer calls isolated here means
+ * index.ts stays testable without a multiplexer running.
  *
- * Panes are identified by tmux pane ids (e.g. `%12`). Splits always target
- * the parent pi's pane (`$TMUX_PANE`) so they follow the agent rather than
- * the user's focus.
+ * Panes are identified by backend-specific IDs:
+ *   - tmux: pane ids (e.g. `%12`)
+ *   - WezTerm: numeric pane ids (e.g. `42`)
+ *
+ * Splits always target the parent pi's pane so they follow the agent rather
+ * than the user's focus.
  */
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
@@ -17,6 +20,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const execFileAsync = promisify(execFile);
+
+// ── Multiplexer backend ──
+
+export type MuxBackend = "tmux" | "wezterm";
 
 // ── Availability ──
 
@@ -40,25 +47,67 @@ function hasCommand(command: string): boolean {
 }
 
 /**
+ * Return the user's preferred multiplexer backend from PI_SUBAGENT_MUX, or
+ * null if unset.
+ */
+function muxPreference(): MuxBackend | null {
+  const pref = (process.env.PI_SUBAGENT_MUX ?? "").trim().toLowerCase();
+  if (pref === "tmux" || pref === "wezterm") return pref;
+  return null;
+}
+
+/**
  * True when running inside tmux with the tmux binary on PATH.
  * `TMUX` is set by tmux in every process it spawns (shell or pane).
  */
-export function isTmuxAvailable(): boolean {
+function isTmuxRuntimeAvailable(): boolean {
   return !!process.env.TMUX && hasCommand("tmux");
 }
 
+/**
+ * True when running inside WezTerm with the wezterm binary on PATH.
+ * `WEZTERM_UNIX_SOCKET` is set by WezTerm in every process it spawns.
+ */
+function isWezTermRuntimeAvailable(): boolean {
+  return !!process.env.WEZTERM_UNIX_SOCKET && hasCommand("wezterm");
+}
+
+/**
+ * Detect the active multiplexer backend. Respects PI_SUBAGENT_MUX override,
+ * otherwise auto-detects based on environment variables.
+ */
+export function getMuxBackend(): MuxBackend | null {
+  const pref = muxPreference();
+  if (pref === "tmux") return isTmuxRuntimeAvailable() ? "tmux" : null;
+  if (pref === "wezterm") return isWezTermRuntimeAvailable() ? "wezterm" : null;
+
+  // Auto-detect: prefer tmux, fall back to wezterm
+  if (isTmuxRuntimeAvailable()) return "tmux";
+  if (isWezTermRuntimeAvailable()) return "wezterm";
+  return null;
+}
+
 export function isMuxAvailable(): boolean {
-  return isTmuxAvailable();
+  return getMuxBackend() !== null;
 }
 
 export function muxSetupHint(): string {
-  return "Start pi inside tmux (`tmux new -A -s pi 'pi'`).";
+  const pref = muxPreference();
+  if (pref === "tmux") {
+    return "Start pi inside tmux (`tmux new -A -s pi 'pi'`).";
+  }
+  if (pref === "wezterm") {
+    return "Start pi inside WezTerm.";
+  }
+  return "Start pi inside tmux (`tmux new -A -s pi 'pi'`) or WezTerm.";
 }
 
-function requireTmux(): void {
-  if (!isTmuxAvailable()) {
-    throw new Error(`tmux is required for subagents. ${muxSetupHint()}`);
+function requireMuxBackend(): MuxBackend {
+  const backend = getMuxBackend();
+  if (!backend) {
+    throw new Error(`No supported terminal multiplexer found. ${muxSetupHint()}`);
   }
+  return backend;
 }
 
 // ── Shell helpers ──
@@ -104,6 +153,15 @@ function rebalanceSurfaces(hintPane?: string): void {
   }, 120);
 }
 
+/**
+ * Take the last N lines of a string.
+ */
+function tailLines(text: string, lines: number): string {
+  const split = text.split("\n");
+  if (split.length <= lines) return text;
+  return split.slice(-lines).join("\n");
+}
+
 // ── Surface primitives ──
 
 /**
@@ -111,57 +169,99 @@ function rebalanceSurfaces(hintPane?: string): void {
  * so new panes follow the agent rather than the user's focus.
  * See https://github.com/HazAT/pi-interactive-subagents/issues/12
  *
- * Returns the new pane id (e.g. `%12`).
+ * Returns the new pane id (tmux: `%12`, wezterm: `42`).
  */
 export function createSurface(name: string): string {
-  void name; // tmux panes are not named; the pi process inside shows its own title.
-  return createSurfaceSplit(name, "right", process.env.TMUX_PANE);
+  const backend = requireMuxBackend();
+
+  if (backend === "tmux") {
+    // tmux panes are not named; the pi process inside shows its own title.
+    return createSurfaceSplit(name, "right", process.env.TMUX_PANE);
+  }
+
+  // wezterm: target the parent pi's pane so splits follow the agent
+  return createSurfaceSplit(name, "right", process.env.WEZTERM_PANE);
 }
 
 /**
  * Create a new split in the given direction from an optional source pane.
- * Returns the new pane id (e.g. `%12`).
+ * Returns the new pane id (tmux: `%12`, wezterm: `42`).
  */
 export function createSurfaceSplit(
   name: string,
   direction: "left" | "right" | "up" | "down",
   fromSurface?: string,
 ): string {
-  void name;
-  requireTmux();
+  const backend = requireMuxBackend();
 
-  const args = ["split-window", "-d"];
-  if (direction === "left" || direction === "right") {
-    args.push("-h");
-  } else {
-    args.push("-v");
+  if (backend === "tmux") {
+    const args = ["split-window", "-d"];
+    if (direction === "left" || direction === "right") {
+      args.push("-h");
+    } else {
+      args.push("-v");
+    }
+    if (direction === "left" || direction === "up") {
+      args.push("-b");
+    }
+    if (fromSurface) {
+      args.push("-t", fromSurface);
+    }
+    args.push("-P", "-F", "#{pane_id}");
+
+    const pane = execFileSync("tmux", args, { encoding: "utf8" }).trim();
+    if (!pane.startsWith("%")) {
+      throw new Error(`Unexpected tmux split-window output: ${pane}`);
+    }
+
+    rebalanceSurfaces(pane);
+    return pane;
   }
-  if (direction === "left" || direction === "up") {
-    args.push("-b");
-  }
+
+  // wezterm
+  const args = ["cli", "split-pane"];
+  if (direction === "left") args.push("--left");
+  else if (direction === "right") args.push("--right");
+  else if (direction === "up") args.push("--top");
+  else args.push("--bottom");
+  args.push("--cwd", process.cwd());
   if (fromSurface) {
-    args.push("-t", fromSurface);
+    args.push("--pane-id", fromSurface);
   }
-  args.push("-P", "-F", "#{pane_id}");
-
-  const pane = execFileSync("tmux", args, { encoding: "utf8" }).trim();
-  if (!pane.startsWith("%")) {
-    throw new Error(`Unexpected tmux split-window output: ${pane}`);
+  const paneId = execFileSync("wezterm", args, { encoding: "utf8" }).trim();
+  if (!paneId || !/^\d+$/.test(paneId)) {
+    throw new Error(`Unexpected wezterm split-pane output: ${paneId || "(empty)"}`);
   }
-
-  rebalanceSurfaces(pane);
-  return pane;
+  try {
+    execFileSync("wezterm", ["cli", "set-tab-title", "--pane-id", paneId, name], {
+      encoding: "utf8",
+    });
+  } catch {
+    // Optional — tab title is cosmetic.
+  }
+  return paneId;
 }
 
 /**
  * Send a command string to a pane and execute it.
- * Typed literally (`-l`) so special characters are not interpreted as keys,
- * then submitted with Enter.
+ * Typed literally (`-l` for tmux) so special characters are not interpreted as
+ * keys, then submitted with Enter.
  */
 export function sendCommand(surface: string, command: string): void {
-  requireTmux();
-  execFileSync("tmux", ["send-keys", "-t", surface, "-l", command], { encoding: "utf8" });
-  execFileSync("tmux", ["send-keys", "-t", surface, "Enter"], { encoding: "utf8" });
+  const backend = requireMuxBackend();
+
+  if (backend === "tmux") {
+    execFileSync("tmux", ["send-keys", "-t", surface, "-l", command], { encoding: "utf8" });
+    execFileSync("tmux", ["send-keys", "-t", surface, "Enter"], { encoding: "utf8" });
+    return;
+  }
+
+  // wezterm
+  execFileSync(
+    "wezterm",
+    ["cli", "send-text", "--pane-id", surface, "--no-paste", command + "\n"],
+    { encoding: "utf8" },
+  );
 }
 
 /**
@@ -206,36 +306,65 @@ export function sendLongCommand(
  * Read the screen contents of a pane (sync).
  */
 export function readScreen(surface: string, lines = 50): string {
-  requireTmux();
-  return execFileSync(
-    "tmux",
-    ["capture-pane", "-p", "-t", surface, "-S", `-${Math.max(1, lines)}`],
-    {
-      encoding: "utf8",
-    },
+  const backend = requireMuxBackend();
+
+  if (backend === "tmux") {
+    return execFileSync(
+      "tmux",
+      ["capture-pane", "-p", "-t", surface, "-S", `-${Math.max(1, lines)}`],
+      { encoding: "utf8" },
+    );
+  }
+
+  // wezterm
+  const raw = execFileSync(
+    "wezterm",
+    ["cli", "get-text", "--pane-id", surface],
+    { encoding: "utf8" },
   );
+  return tailLines(raw, lines);
 }
 
 /**
  * Read the screen contents of a pane (async).
  */
 export async function readScreenAsync(surface: string, lines = 50): Promise<string> {
-  requireTmux();
+  const backend = requireMuxBackend();
+
+  if (backend === "tmux") {
+    const { stdout } = await execFileAsync(
+      "tmux",
+      ["capture-pane", "-p", "-t", surface, "-S", `-${Math.max(1, lines)}`],
+      { encoding: "utf8" },
+    );
+    return stdout;
+  }
+
+  // wezterm
   const { stdout } = await execFileAsync(
-    "tmux",
-    ["capture-pane", "-p", "-t", surface, "-S", `-${Math.max(1, lines)}`],
+    "wezterm",
+    ["cli", "get-text", "--pane-id", surface],
     { encoding: "utf8" },
   );
-  return stdout;
+  return tailLines(stdout, lines);
 }
 
 /**
  * Close a pane.
  */
 export function closeSurface(surface: string): void {
-  requireTmux();
-  execFileSync("tmux", ["kill-pane", "-t", surface], { encoding: "utf8" });
-  rebalanceSurfaces();
+  const backend = requireMuxBackend();
+
+  if (backend === "tmux") {
+    execFileSync("tmux", ["kill-pane", "-t", surface], { encoding: "utf8" });
+    rebalanceSurfaces();
+    return;
+  }
+
+  // wezterm
+  execFileSync("wezterm", ["cli", "kill-pane", "--pane-id", surface], {
+    encoding: "utf8",
+  });
 }
 
 // ── Exit polling ──

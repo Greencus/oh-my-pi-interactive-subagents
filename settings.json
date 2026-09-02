@@ -1,0 +1,52 @@
+{
+  "subagents": {
+    "orchestrator": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "high",
+      "temperature": 0.3
+    },
+    "scout": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "low",
+      "temperature": 0.1
+    },
+    "oracle": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "high",
+      "temperature": 0.1
+    },
+    "worker": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "medium",
+      "temperature": 0.2
+    },
+    "researcher": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "medium",
+      "temperature": 0.1
+    },
+    "observer": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "low",
+      "temperature": 0.1
+    },
+    "designer": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "medium",
+      "temperature": 0.7
+    },
+    "councillor": {
+      "provider": "openrouter",
+      "id": "z-ai/glm-5.3",
+      "thinking": "medium",
+      "temperature": 0.2
+    }
+  }
+}

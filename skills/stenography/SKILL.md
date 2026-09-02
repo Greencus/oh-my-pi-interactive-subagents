@@ -9,6 +9,10 @@ Maintain a running record of changes made to the codebase by AI agents.
 
 The changelog is the persistent record of AI-assisted development activity. Use the current session context as the primary source for determining what was changed, why it was changed, and what the resulting impact was. Use repository tools when session context is insufficient to accurately determine the changes.
 
+**Keep entries concise enough to remain useful as a long-term engineering record.**
+
+For small changes, fields may be combined or omitted when the information is obvious. For larger changes, expand the description as necessary to preserve important implementation context.
+
 The only file this skill is permitted to write to is `CHANGELOG.md` at the root of the project repository.
 
 > **Do not** create, modify, delete, rename, or generate any other files as part of this skill.
@@ -172,11 +176,7 @@ Year>Month>Day>Hour>Minute
 - **Impact:** <important behavioral or architectural impact>
 - **Verification:** <tests/checks performed, or state that verification is pending>
 - **Author:** AI Agent
-```
 
-Keep entries concise enough to remain useful as a long-term engineering record.
-
-For small changes, fields may be combined or omitted when the information is obvious. For larger changes, expand the description as necessary to preserve important implementation context.
 
 ## Scope
 
@@ -198,3 +198,14 @@ Do **not** write to:
 - Source files
 - Tests
 - Configuration files
+
+## Completion Criteria
+
+Stenography is complete when:
+
+- The root CHANGELOG.md has been inspected.
+- The meaningful code changes made by the AI agent have been identified.
+- Related changes have been grouped coherently.
+- The reason and impact of the changes have been recorded where known.
+- The entry has been written to the root CHANGELOG.md.
+- No other repository files have been modified by the stenography workflow

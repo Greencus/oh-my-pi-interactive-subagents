@@ -15,6 +15,7 @@ export interface AgentModelConfig {
  * Full settings.json schema for the subagents extension.
  */
 export interface SubagentSettings {
+ defaultAgent?: string;
  subagents?: {
   [role: string]: AgentModelConfig;
  };
@@ -113,4 +114,13 @@ export function buildModelString(
 ): string | undefined {
  if (!model) return undefined;
  return thinking ? `${model}:${thinking}` : model;
+}
+
+/**
+ * Get the default agent name from settings.json.
+ * When set, the subagent tool injects this agent when none is specified.
+ */
+export function getDefaultAgent(cwd?: string): string | undefined {
+ const settings = loadSubagentSettings(cwd);
+ return settings.defaultAgent;
 }

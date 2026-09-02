@@ -29,7 +29,7 @@ import {
   readScreen,
   getMuxBackend,
 } from "./tmux.ts";
-import { loadSubagentSettings, resolveModelConfig } from "./settings.ts";
+import { resolveModelConfig, getDefaultAgent } from "./settings.ts";
 
 import {
   countSessionEntryLines,
@@ -556,7 +556,7 @@ function formatUsageSegments(stats: SessionStats): string[] {
 }
 
 /** ANSI colors for widget status icons (raw, since the widget bypasses theme). */
-const ICON_GREEN = "\x1b[38;2;126;186;103m";
+const _ICON_GREEN = "\x1b[38;2;126;186;103m";
 const ICON_YELLOW = "\x1b[38;2;214;181;94m";
 const ICON_RED = "\x1b[38;2;224;108;117m";
 const ICON_DIM = "\x1b[38;2;128;128;128m";
@@ -1957,19 +1957,27 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       const permittedSet = new Set(permittedAgents);
       const permittedList = permittedAgents.join(", ") || "(none)";
 
+      // Inject default agent from settings.json when none specified
       if (!params.agent) {
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                `You must specify which agent to spawn via the "agent" field. ` +
-                `Available agents: ${permittedList}.`,
-            },
-          ],
-          details: { error: "agent required" },
-        };
-      } else if (!permittedSet.has(params.agent)) {
+        const defaultAgent = getDefaultAgent();
+        if (defaultAgent && permittedSet.has(defaultAgent)) {
+          params.agent = defaultAgent;
+        } else {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `You must specify which agent to spawn via the "agent" field. ` +
+                  `Available agents: ${permittedList}.`,
+              },
+            ],
+            details: { error: "agent required" },
+          };
+        }
+      }
+
+      if (!permittedSet.has(params.agent)) {
         return {
           content: [
             {
@@ -2397,7 +2405,6 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       // mutating the same .jsonl corrupts it. Steer it by name instead.
       for (const r of runningSubagents.values()) {
         if (resolve(r.sessionFile) === resolve(sessionPath)) {
-          const err = `Subagent "${requestedName}" is still running as "${r.name}". Your message will steer it; resending as a steer.`;
           return handleSubagentSteer({ name: r.name, message: params.message });
         }
       }

@@ -32,7 +32,9 @@ results into one coherent outcome.
 | External docs, library research | `researcher` | API lookups, GitHub examples, docs |
 | Image/screenshot analysis | `observer` | Visual inspection, UI screenshots |
 | UI/UX design work | `designer` | Frontend design, layout, styling |
+| Multi-model consensus | `stenographer` | Document agentic changes to codebase |
 | Multi-model consensus | `councillor` | Critical decisions needing diverse input |
+
 
 ## Context Management
 
@@ -53,6 +55,10 @@ results into one coherent outcome.
 - After librarian completes: verify research is relevant and actionable
 - After oracle completes: verify recommendations are feasible
 - Run assigned validation after implementation completes
+
+## Documentation
+
+- After a task is completed, with significant code change, that makes sense to document as one group of changes, then delegate a stenographer specialist to document the changes.
 
 ## Anti-Patterns to Avoid
 

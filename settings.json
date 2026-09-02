@@ -1,4 +1,5 @@
 {
+  "mainAgent": "orchestrator",
   "subagents": {
     "orchestrator": {
       "provider": "openrouter",

@@ -29,7 +29,11 @@ import {
   readScreen,
   getMuxBackend,
 } from "./tmux.ts";
-import { resolveModelConfig, getDefaultAgent } from "./settings.ts";
+import {
+  resolveModelConfig,
+  getDefaultAgent,
+  getMainAgent,
+} from "./settings.ts";
 
 import {
   countSessionEntryLines,
@@ -1879,6 +1883,29 @@ export default function subagentsExtension(pi: ExtensionAPI) {
     if (!prevAbort || prevAbort.signal.aborted) {
       (globalThis as any)[POLL_ABORT_KEY] = new AbortController();
     }
+  });
+
+  // Inject main agent system prompt when configured
+  pi.on("before_agent_start", async (_event, ctx) => {
+    const mainAgentName = getMainAgent();
+    if (!mainAgentName) return;
+
+    const agentDef = loadAgentDefaults(mainAgentName);
+    if (!agentDef?.body) return;
+
+    const modeHint = agentDef.autoExit
+      ? "Complete your task autonomously. When you are finished, simply stop — your session ends automatically."
+      : "Complete your task. The user can interact with you at any time, and the session ends when the user exits the pane.";
+
+    const summaryInstruction = agentDef.autoExit
+      ? "Your FINAL assistant message should summarize what you accomplished."
+      : "Your FINAL assistant message (before the user exits) should summarize what you accomplished.";
+
+    const systemPrompt = [agentDef.body, modeHint, summaryInstruction].join(
+      "\n\n",
+    );
+
+    return { systemPrompt };
   });
 
   // Clean up on session shutdown

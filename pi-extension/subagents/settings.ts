@@ -16,6 +16,8 @@ export interface AgentModelConfig {
  */
 export interface SubagentSettings {
  defaultAgent?: string;
+ /** Agent whose system prompt is injected into the main Pi agent. */
+ mainAgent?: string;
  subagents?: {
   [role: string]: AgentModelConfig;
  };
@@ -123,4 +125,13 @@ export function buildModelString(
 export function getDefaultAgent(cwd?: string): string | undefined {
  const settings = loadSubagentSettings(cwd);
  return settings.defaultAgent;
+}
+
+/**
+ * Get the main agent name from settings.json.
+ * When set, the main Pi agent adopts this agent's system prompt.
+ */
+export function getMainAgent(cwd?: string): string | undefined {
+ const settings = loadSubagentSettings(cwd);
+ return settings.mainAgent;
 }

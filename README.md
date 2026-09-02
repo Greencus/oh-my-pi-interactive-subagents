@@ -1,6 +1,6 @@
-# pi-interactive-subagents
+# oh-my-pi-interactive-subagents
 
-Async subagents for [pi](https://github.com/badlogic/pi-mono), running in tmux or WezTerm panes. Spawn a sub-agent, keep working in the main session, and get the result steered back when it finishes. Fully non-blocking.
+Async subagents for [pi](https://github.com/badlogic/pi-mono), running in tmux or WezTerm panes. Spawn a sub-agent, keep working in the main session, and get the result steered back when it finishes. Fully non-blocking. This fork also has features ported from [oh my opencode slim](https://github.com/alvinunreal/oh-my-opencode-slim) to attempt to make the agents more organized and more performant. If you find and use this keep in mind ive hardly updated the readme.
 
 **Fork with WezTerm support.** See [Acknowledgements](#acknowledgements) for the upstream project, which also supports cmux and zellij.
 
